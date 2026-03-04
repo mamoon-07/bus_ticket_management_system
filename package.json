@@ -1,0 +1,17 @@
+{
+  "name": "bus",
+  "version": "1.0.0",
+  "scripts": {
+    "client": "npm run dev --prefix client",
+    "server": "npm run dev --prefix server",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "npm run build --prefix client"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Bus Ticket Management System",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

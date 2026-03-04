@@ -146,6 +146,86 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.seat-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.chip-available {
+  background: rgba(80, 188, 116, 0.18);
+  color: #65d38d;
+}
+
+.chip-selected {
+  background: rgba(103, 164, 255, 0.22);
+  color: #89b8ff;
+}
+
+.chip-booked {
+  background: rgba(255, 112, 112, 0.2);
+  color: #ff9a9a;
+}
+
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(54px, 1fr));
+  gap: 8px;
+}
+
+.seat {
+  width: 100%;
+  padding: 9px 6px;
+  border-radius: 9px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.seat-aisle {
+  margin-right: 10px;
+}
+
+.seat-available {
+  background: rgba(75, 190, 115, 0.18);
+  color: #67d88f;
+  border-color: rgba(75, 190, 115, 0.5);
+}
+
+.seat-available:hover {
+  background: rgba(75, 190, 115, 0.28);
+}
+
+.seat-selected {
+  background: rgba(103, 164, 255, 0.28);
+  color: #d9e7ff;
+  border-color: rgba(103, 164, 255, 0.62);
+}
+
+.seat-selected:hover {
+  background: rgba(103, 164, 255, 0.38);
+}
+
+.seat-booked {
+  background: rgba(255, 112, 112, 0.18);
+  color: #ffadad;
+  border-color: rgba(255, 112, 112, 0.45);
+  cursor: not-allowed;
+}
+
+.seat-booked:hover {
+  background: rgba(255, 112, 112, 0.18);
+}
+
 .list {
   display: grid;
   gap: 10px;

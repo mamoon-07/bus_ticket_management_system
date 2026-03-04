@@ -8,6 +8,7 @@ type RouteItem = {
   to: string;
   departureTime: string;
   price: number;
+  totalSeats: number;
   seatsAvailable: number;
 };
 
@@ -18,7 +19,9 @@ type Booking = {
   routeName: string;
   from: string;
   to: string;
+  travelDate: string;
   departureTime: string;
+  selectedSeats?: string[];
   seats: number;
   totalPrice: number;
 };
@@ -49,6 +52,25 @@ function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function generateSeatLabels(totalSeats: number) {
+  return Array.from({ length: totalSeats }, (_value, index) => {
+    const row = Math.floor(index / 4) + 1;
+    const colLabel = ["A", "B", "C", "D"][index % 4];
+    return `${row}${colLabel}`;
+  });
+}
+
+function formatDateDisplay(dateText: string) {
+  if (!dateText) {
+    return "";
+  }
+  const value = new Date(dateText);
+  if (Number.isNaN(value.getTime())) {
+    return dateText;
+  }
+  return value.toLocaleDateString();
+}
+
 function generateRandomRoutes(count = 5): RouteItem[] {
   return Array.from({ length: count }, (_value, index) => {
     const from = CITIES[randomInt(0, CITIES.length - 1)];
@@ -60,7 +82,7 @@ function generateRandomRoutes(count = 5): RouteItem[] {
     const hour = randomInt(6, 22).toString().padStart(2, "0");
     const minute = randomInt(0, 1) === 0 ? "00" : "30";
     const busName = `${BUS_NAMES[randomInt(0, BUS_NAMES.length - 1)]} ${randomInt(101, 999)}`;
-    const seatsAvailable = randomInt(8, 35);
+    const totalSeats = randomInt(24, 40);
     const price = randomInt(25, 95);
 
     return {
@@ -69,8 +91,9 @@ function generateRandomRoutes(count = 5): RouteItem[] {
       from,
       to,
       departureTime: `${hour}:${minute}`,
+      totalSeats,
+      seatsAvailable: totalSeats,
       price,
-      seatsAvailable,
     };
   });
 }
@@ -79,16 +102,54 @@ function App() {
   const [theme, setTheme] = useState<Theme>("dark");
   const [routes, setRoutes] = useState<RouteItem[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [selectedRouteId, setSelectedRouteId] = useState<number>(1);
+  const [selectedRouteId, setSelectedRouteId] = useState<number>(0);
+  const [origin, setOrigin] = useState("");
+  const [destination, setDestination] = useState("");
+  const [travelDate, setTravelDate] = useState("");
   const [passengerName, setPassengerName] = useState("");
-  const [seats, setSeats] = useState(1);
+  const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [isOfflineDemo, setIsOfflineDemo] = useState(false);
 
+  const filteredRoutes = useMemo(
+    () =>
+      routes.filter(
+        (route) =>
+          (!origin || route.from === origin) &&
+          (!destination || route.to === destination)
+      ),
+    [destination, origin, routes]
+  );
+
   const selectedRoute = useMemo(
-    () => routes.find((route) => route.id === selectedRouteId),
-    [routes, selectedRouteId]
+    () => filteredRoutes.find((route) => route.id === selectedRouteId),
+    [filteredRoutes, selectedRouteId]
+  );
+
+  const routeSeatLabels = useMemo(() => {
+    if (!selectedRoute) {
+      return [];
+    }
+    const totalSeats = selectedRoute.totalSeats || selectedRoute.seatsAvailable || 0;
+    return generateSeatLabels(totalSeats);
+  }, [selectedRoute]);
+
+  const bookedSeatSet = useMemo(() => {
+    if (!selectedRoute || !travelDate) {
+      return new Set<string>();
+    }
+    const booked = bookings
+      .filter(
+        (booking) => booking.routeId === selectedRoute.id && booking.travelDate === travelDate
+      )
+      .flatMap((booking) => booking.selectedSeats ?? []);
+    return new Set(booked);
+  }, [bookings, selectedRoute, travelDate]);
+
+  const availableSeatCount = useMemo(
+    () => routeSeatLabels.filter((seatLabel) => !bookedSeatSet.has(seatLabel)).length,
+    [bookedSeatSet, routeSeatLabels]
   );
 
   useEffect(() => {
@@ -98,6 +159,28 @@ function App() {
   useEffect(() => {
     void Promise.all([loadRoutes(), loadBookings()]);
   }, []);
+
+  useEffect(() => {
+    if (filteredRoutes.length === 0) {
+      setSelectedRouteId(0);
+      return;
+    }
+
+    const stillExists = filteredRoutes.some((route) => route.id === selectedRouteId);
+    if (!stillExists) {
+      setSelectedRouteId(filteredRoutes[0].id);
+    }
+  }, [filteredRoutes, selectedRouteId]);
+
+  useEffect(() => {
+    setSelectedSeats([]);
+  }, [selectedRouteId, travelDate, origin, destination]);
+
+  useEffect(() => {
+    setSelectedSeats((current) =>
+      current.filter((seatLabel) => !bookedSeatSet.has(seatLabel))
+    );
+  }, [bookedSeatSet]);
 
   async function loadRoutes() {
     try {
@@ -114,14 +197,12 @@ function App() {
 
       setIsOfflineDemo(false);
       setRoutes(data);
-      if (data.length > 0) {
-        setSelectedRouteId(data[0].id);
-      }
+      setSelectedRouteId(0);
     } catch {
       const fallbackRoutes = generateRandomRoutes();
       setIsOfflineDemo(true);
       setRoutes(fallbackRoutes);
-      setSelectedRouteId(fallbackRoutes[0].id);
+      setSelectedRouteId(0);
       setMessage("Server unavailable. Using offline random routes.");
     }
   }
@@ -150,12 +231,12 @@ function App() {
       const data = (await response.json()) as RouteItem[];
       setIsOfflineDemo(false);
       setRoutes(data);
-      setSelectedRouteId(data[0]?.id ?? 1);
+      setSelectedRouteId(0);
     } catch {
       const fallbackRoutes = generateRandomRoutes();
       setIsOfflineDemo(true);
       setRoutes(fallbackRoutes);
-      setSelectedRouteId(fallbackRoutes[0].id);
+      setSelectedRouteId(0);
       setMessage("Generated offline random routes.");
     }
   }
@@ -166,10 +247,49 @@ function App() {
     }
   }
 
+  function toggleSeatSelection(seatLabel: string) {
+    if (bookedSeatSet.has(seatLabel)) {
+      return;
+    }
+    setSelectedSeats((current) =>
+      current.includes(seatLabel)
+        ? current.filter((seat) => seat !== seatLabel)
+        : [...current, seatLabel]
+    );
+  }
+
   async function handleBooking(event: FormEvent) {
     event.preventDefault();
+    if (!origin || !destination) {
+      setMessage("Please select origin and destination.");
+      return;
+    }
+    if (origin === destination) {
+      setMessage("Origin and destination must be different.");
+      return;
+    }
+    if (!travelDate) {
+      setMessage("Please select your travel date.");
+      return;
+    }
     if (!passengerName.trim()) {
       setMessage("Please enter passenger name.");
+      return;
+    }
+    if (filteredRoutes.length === 0) {
+      setMessage("No buses found for the selected route.");
+      return;
+    }
+    if (!selectedRoute) {
+      setMessage("Please select a bus from the available list.");
+      return;
+    }
+    if (selectedSeats.length === 0) {
+      setMessage("Please select at least one seat.");
+      return;
+    }
+    if (selectedSeats.length > availableSeatCount) {
+      setMessage("Not enough seats available.");
       return;
     }
 
@@ -177,38 +297,30 @@ function App() {
     setMessage("");
     try {
       if (isOfflineDemo) {
-        const route = routes.find((item) => item.id === selectedRouteId);
-        if (!route) {
-          setMessage("No route found. Generate routes first.");
-          return;
-        }
-        if (seats > route.seatsAvailable) {
-          setMessage("Not enough seats available.");
-          return;
-        }
-
         const booking: Booking = {
           id: Date.now(),
           passengerName: passengerName.trim(),
-          routeId: route.id,
-          routeName: route.busName,
-          from: route.from,
-          to: route.to,
-          departureTime: route.departureTime,
-          seats,
-          totalPrice: seats * route.price,
+          routeId: selectedRoute.id,
+          routeName: selectedRoute.busName,
+          from: selectedRoute.from,
+          to: selectedRoute.to,
+          travelDate,
+          departureTime: selectedRoute.departureTime,
+          selectedSeats,
+          seats: selectedSeats.length,
+          totalPrice: selectedSeats.length * selectedRoute.price,
         };
 
         setBookings((prev) => [booking, ...prev]);
         setRoutes((prev) =>
           prev.map((item) =>
-            item.id === route.id
-              ? { ...item, seatsAvailable: item.seatsAvailable - seats }
+            item.id === selectedRoute.id
+              ? { ...item, seatsAvailable: item.seatsAvailable - selectedSeats.length }
               : item
           )
         );
         setPassengerName("");
-        setSeats(1);
+        setSelectedSeats([]);
         setMessage("Ticket booked in offline demo mode.");
         return;
       }
@@ -219,7 +331,9 @@ function App() {
         body: JSON.stringify({
           passengerName: passengerName.trim(),
           routeId: selectedRouteId,
-          seats,
+          selectedSeats,
+          seats: selectedSeats.length,
+          travelDate,
         }),
       });
 
@@ -230,7 +344,7 @@ function App() {
       }
 
       setPassengerName("");
-      setSeats(1);
+      setSelectedSeats([]);
       setMessage("Ticket booked successfully.");
       await Promise.all([loadRoutes(), loadBookings()]);
     } catch {
@@ -299,6 +413,120 @@ function App() {
           <h2>Book a Ticket</h2>
           <form onSubmit={handleBooking} className="form">
             <label>
+              Origin
+              <select
+                value={origin}
+                onFocus={ensureRoutesOnSelectOpen}
+                onChange={(event) => setOrigin(event.target.value)}
+              >
+                <option value="">Select origin</option>
+                {CITIES.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Destination
+              <select
+                value={destination}
+                onFocus={ensureRoutesOnSelectOpen}
+                onChange={(event) => setDestination(event.target.value)}
+              >
+                <option value="">Select destination</option>
+                {CITIES.filter((city) => city !== origin).map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Travel Date
+              <input
+                type="date"
+                value={travelDate}
+                onChange={(event) => setTravelDate(event.target.value)}
+                min={new Date().toISOString().split("T")[0]}
+              />
+            </label>
+
+            {origin && destination && travelDate ? (
+              filteredRoutes.length > 0 ? (
+                <>
+                  <label>
+                    Available Buses
+                    <select
+                      value={selectedRouteId}
+                      onFocus={ensureRoutesOnSelectOpen}
+                      onChange={(event) => setSelectedRouteId(Number(event.target.value))}
+                    >
+                      {filteredRoutes.map((route) => (
+                        <option key={route.id} value={route.id}>
+                          {route.busName} - {route.departureTime} - ${route.price}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedRoute ? (
+                    <>
+                      <p className="route-info">
+                        Route: {selectedRoute.from} to {selectedRoute.to} | Departure:{" "}
+                        {selectedRoute.departureTime} | Price per Seat: ${selectedRoute.price}
+                      </p>
+                      <div className="seat-stats">
+                        <span className="chip chip-available">
+                          Available: {availableSeatCount}
+                        </span>
+                        <span className="chip chip-selected">
+                          Selected: {selectedSeats.length}
+                        </span>
+                        <span className="chip chip-booked">
+                          Booked: {bookedSeatSet.size}
+                        </span>
+                      </div>
+                      <div className="seat-grid" role="group" aria-label="Seat Selection">
+                        {routeSeatLabels.map((seatLabel, index) => {
+                          const isBooked = bookedSeatSet.has(seatLabel);
+                          const isSelected = selectedSeats.includes(seatLabel);
+                          const seatClass = isBooked
+                            ? "seat seat-booked"
+                            : isSelected
+                              ? "seat seat-selected"
+                              : "seat seat-available";
+                          const needsAisle = (index + 1) % 2 === 0;
+                          return (
+                            <button
+                              key={seatLabel}
+                              type="button"
+                              className={`${seatClass}${needsAisle ? " seat-aisle" : ""}`}
+                              disabled={isBooked}
+                              onClick={() => toggleSeatSelection(seatLabel)}
+                            >
+                              {seatLabel}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <p className="route-info">
+                  No buses available for {origin} to {destination} on{" "}
+                  {formatDateDisplay(travelDate)}.
+                </p>
+              )
+            ) : (
+              <p className="route-info">
+                Select origin and destination first, then choose your travel date.
+              </p>
+            )}
+
+            <label>
               Passenger Name
               <input
                 value={passengerName}
@@ -307,40 +535,7 @@ function App() {
               />
             </label>
 
-            <label>
-              Select Route
-              <select
-                value={selectedRouteId}
-                onFocus={ensureRoutesOnSelectOpen}
-                onChange={(event) => setSelectedRouteId(Number(event.target.value))}
-              >
-                {routes.map((route) => (
-                  <option key={route.id} value={route.id}>
-                    {route.busName} - {route.from} to {route.to}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Seats
-              <input
-                type="number"
-                min={1}
-                max={selectedRoute?.seatsAvailable ?? 1}
-                value={seats}
-                onChange={(event) => setSeats(Number(event.target.value))}
-              />
-            </label>
-
-            {selectedRoute ? (
-              <p className="route-info">
-                Departure: {selectedRoute.departureTime} | Price per Seat: $
-                {selectedRoute.price} | Available Seats: {selectedRoute.seatsAvailable}
-              </p>
-            ) : null}
-
-            <button type="submit" disabled={loading}>
+            <button type="submit" disabled={loading || !selectedRoute}>
               {loading ? "Processing..." : "Book Now"}
             </button>
             <button type="button" onClick={() => void generateRoutesOnServer()}>
@@ -361,7 +556,7 @@ function App() {
                   </p>
                 </div>
                 <p>
-                  ${route.price} | Seats Left: {route.seatsAvailable}
+                  ${route.price} | Seats Left: {route.seatsAvailable}/{route.totalSeats}
                 </p>
               </article>
             ))}
@@ -382,7 +577,9 @@ function App() {
                       {booking.routeName} | {booking.from} to {booking.to}
                     </p>
                     <p>
-                      Seats: {booking.seats} | Departure: {booking.departureTime}
+                      Date: {formatDateDisplay(booking.travelDate)} | Seats:{" "}
+                      {booking.selectedSeats?.join(", ") || booking.seats} | Departure:{" "}
+                      {booking.departureTime}
                     </p>
                   </div>
                   <div className="booking-actions">

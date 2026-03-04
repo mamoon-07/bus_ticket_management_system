@@ -39,6 +39,7 @@ function generateRandomRoutes(count = 5) {
     const minute = randomInt(0, 1) === 0 ? "00" : "30";
     const busName = `${BUS_NAMES[randomInt(0, BUS_NAMES.length - 1)]} ${randomInt(101, 999)}`;
 
+    const totalSeats = randomInt(24, 40);
     routes.push({
       id: index + 1,
       busName,
@@ -46,9 +47,21 @@ function generateRandomRoutes(count = 5) {
       to,
       departureTime: `${hour}:${minute}`,
       price: randomInt(25, 95),
-      seatsAvailable: randomInt(8, 35),
+      totalSeats,
+      seatsAvailable: totalSeats,
     });
   }
+}
+
+function buildSeatLabels(totalSeats) {
+  const labels = [];
+  for (let index = 0; index < totalSeats; index += 1) {
+    const row = Math.floor(index / 4) + 1;
+    const col = index % 4;
+    const colLabel = ["A", "B", "C", "D"][col];
+    labels.push(`${row}${colLabel}`);
+  }
+  return labels;
 }
 
 function sendJson(res, statusCode, data) {
@@ -123,8 +136,7 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const { passengerName, routeId, seats } = payload;
-    const parsedSeats = Number(seats);
+    const { passengerName, routeId, seats, travelDate, selectedSeats } = payload;
     const route = routes.find((item) => item.id === Number(routeId));
 
     if (!passengerName || !String(passengerName).trim()) {
@@ -137,17 +149,61 @@ module.exports = async (req, res) => {
       return;
     }
 
-    if (!Number.isInteger(parsedSeats) || parsedSeats < 1) {
-      sendJson(res, 400, { message: "Seat count must be at least 1." });
+    if (!travelDate || !String(travelDate).trim()) {
+      sendJson(res, 400, { message: "Travel date is required." });
       return;
     }
 
-    if (parsedSeats > route.seatsAvailable) {
+    const normalizedTravelDate = String(travelDate).trim();
+    const bookedSeatsForRouteAndDate = new Set(
+      bookings
+        .filter((booking) => booking.routeId === route.id && booking.travelDate === normalizedTravelDate)
+        .flatMap((booking) => booking.selectedSeats || [])
+    );
+    const allRouteSeats = buildSeatLabels(route.totalSeats || route.seatsAvailable);
+
+    let normalizedSelectedSeats = Array.isArray(selectedSeats)
+      ? selectedSeats.map((seat) => String(seat).trim()).filter(Boolean)
+      : [];
+
+    if (normalizedSelectedSeats.length === 0) {
+      const parsedSeats = Number(seats);
+      if (!Number.isInteger(parsedSeats) || parsedSeats < 1) {
+        sendJson(res, 400, { message: "Please select at least one seat." });
+        return;
+      }
+      normalizedSelectedSeats = allRouteSeats
+        .filter((seatLabel) => !bookedSeatsForRouteAndDate.has(seatLabel))
+        .slice(0, parsedSeats);
+    }
+
+    normalizedSelectedSeats = [...new Set(normalizedSelectedSeats)];
+
+    if (normalizedSelectedSeats.length === 0) {
+      sendJson(res, 400, { message: "Please select at least one seat." });
+      return;
+    }
+
+    const hasInvalidSeat = normalizedSelectedSeats.some((seat) => !allRouteSeats.includes(seat));
+    if (hasInvalidSeat) {
+      sendJson(res, 400, { message: "One or more selected seats are invalid." });
+      return;
+    }
+
+    const alreadyBookedSeat = normalizedSelectedSeats.find((seat) =>
+      bookedSeatsForRouteAndDate.has(seat)
+    );
+    if (alreadyBookedSeat) {
+      sendJson(res, 400, { message: `Seat ${alreadyBookedSeat} is already booked.` });
+      return;
+    }
+
+    if (normalizedSelectedSeats.length > route.seatsAvailable) {
       sendJson(res, 400, { message: "Not enough seats available." });
       return;
     }
 
-    route.seatsAvailable -= parsedSeats;
+    route.seatsAvailable -= normalizedSelectedSeats.length;
     const booking = {
       id: nextBookingId++,
       passengerName: String(passengerName).trim(),
@@ -155,9 +211,11 @@ module.exports = async (req, res) => {
       routeName: route.busName,
       from: route.from,
       to: route.to,
+      travelDate: normalizedTravelDate,
       departureTime: route.departureTime,
-      seats: parsedSeats,
-      totalPrice: parsedSeats * route.price,
+      selectedSeats: normalizedSelectedSeats,
+      seats: normalizedSelectedSeats.length,
+      totalPrice: normalizedSelectedSeats.length * route.price,
     };
     bookings.push(booking);
 
